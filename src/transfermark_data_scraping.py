@@ -1,5 +1,6 @@
 import os.path
 
+import bs4
 import requests
 import numpy as np
 import pandas as pd
@@ -13,7 +14,7 @@ LIVE_MATCHES_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "live_matches.csv")
 Path(OUTPUT_DIR_PATH).mkdir(parents=True, exist_ok=True)
 
 
-def get_page_parser(url: str):
+def get_page_parser(url: str) -> bs4.BeautifulSoup:
     headers = {'User-Agent':
            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36'}
 
@@ -23,7 +24,7 @@ def get_page_parser(url: str):
     return pageSoup
 
 
-def get_match_details(match_details_url: str):
+def get_match_details(match_details_url: str) -> None:
     pageSoup = get_page_parser(match_details_url)
 
     div_lineups_row = pageSoup.select("main#tm-main > .row")[2]
@@ -32,7 +33,7 @@ def get_match_details(match_details_url: str):
 
     return None
 
-def get_live_score(url: str="https://www.transfermarkt.com/ticker/index/live"):
+def get_live_score(url: str) -> pd.DataFrame:
     pageSoup = get_page_parser(url)
     div_categories = pageSoup.find_all("div", {"class": "kategorie"})
 
@@ -65,5 +66,11 @@ def get_live_score(url: str="https://www.transfermarkt.com/ticker/index/live"):
 
             df_matches = df_matches._append(new_match_data, ignore_index=True)
 
+    return df_matches
 
+
+if __name__ == "__main__":
+    url = "https://www.transfermarkt.com/ticker/index/live"
+    df_matches = get_live_score(url)
     df_matches.to_csv(LIVE_MATCHES_FILE_PATH, index=False)
+
