@@ -29,9 +29,8 @@ def get_match_details(match_details_url: str) -> None:
 
     div_lineups_row = pageSoup.select("main#tm-main > .row")[2]
 
-    
-
     return None
+
 
 def get_live_score(url: str) -> pd.DataFrame:
     pageSoup = get_page_parser(url)
