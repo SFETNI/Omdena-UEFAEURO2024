@@ -36,14 +36,13 @@ def get_match_details(match_details_url: str) -> None:
 def get_live_score(url: str) -> pd.DataFrame:
     pageSoup = get_page_parser(url)
     div_categories = pageSoup.find_all("div", {"class": "kategorie"})
-
-    #Let's look at the first name in the Players list.
     competitions = {}
     data = np.array([], dtype=[("competition", str), ("home_team", str),
                                ("away_team", str), ("home_team_goals", int),
                                ("away_team_goals", int)])
     df_matches = pd.DataFrame(data, columns=["competition", "home_team", "away_team",
                                              "home_team_goals", "away_team_goals"])
+
     for div_category in div_categories:
         new_match_data = {"competition": div_category.text.strip()}
         table_live_scores = div_category.find_next_sibling("table", attrs={"class": "livescore"})
