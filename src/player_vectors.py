@@ -5,8 +5,11 @@ import pandas as pd
 from sklearn.decomposition import NMF
 
 
+ACTIONS_GRID_SHAPE = (30, 20)
 OUTPUT_DIR_PATH = os.path.join(os.path.dirname(__file__), "..", "output")
-ACTIONS_GRID_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "actions_grid_smoothed.csv")
+ACTIONS_GRID_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "actions_grid.csv")
+ACTIONS_GRID_NORMALIZED_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "actions_grid_normalized.csv")
+ACTIONS_GRID_SMOOTHED_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "actions_grid_smoothed.csv")
 PLAYERS_TOTAL_PLAYED_TIME_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "players_total_played_time.csv")
 
 
@@ -26,16 +29,18 @@ def load_data(actions_grid_file_path: str, players_total_played_time_file_path: 
 def normalize_actions_data(df_actions_grid: pd.DataFrame, df_players_total_played_time: pd.DataFrame):
     df_actions_grid_normalized = df_actions_grid.copy()
     df_actions_grid_normalized[["Shot", "Pass", "Dribble"]] = df_actions_grid_normalized.apply(
-        normalize_actions_data_row, axis=1, args=(df_players_total_played_time,)).tolist()
+        normalize_actions_data_row, axis=1, args=(df_players_total_played_time,))
 
     return df_actions_grid_normalized
 
 
-def normalize_actions_data_row(row, df_players_total_played_time: pd.DataFrame, columns_to_update: int=3):
+def normalize_actions_data_row(row, df_players_total_played_time: pd.DataFrame):
     total_played_time = df_players_total_played_time.loc[
         df_players_total_played_time["player_id"] == row["player_id"]]["play_duration"].values[0]
 
-    return (1/total_played_time,)*columns_to_update
+    return [(1/total_played_time)*row["Shot"],
+            (1/total_played_time)*row["Pass"],
+            (1/total_played_time)*row["Dribble"]]
 
 
 def get_gaussian_kernel(kernel_radius=1):
@@ -121,13 +126,21 @@ def save_heatmaps(action_heatmap: dict[str, np.array],
         np.save(os.path.join(output_dir_path, f"compressed_heatmap_{action_type}_W"), W)
         np.save(os.path.join(output_dir_path, f"compressed_heatmap_{action_type}_H"), H)
     for action_type, heatmap in action_heatmap.items():
-        np.save(os.path.join(output_dir_path, "actions_heatmap"), heatmap)
+        np.save(os.path.join(output_dir_path, f"actions_heatmap_{action_type}"), heatmap)
 
 
 if __name__ == "__main__":
     df_actions_grid, df_players_total_played_time = load_data(ACTIONS_GRID_FILE_PATH, PLAYERS_TOTAL_PLAYED_TIME_FILE_PATH)
-    df_actions_grid_normalized = normalize_actions_data(df_actions_grid, df_players_total_played_time)
-    df_actions_grid_smoothed = smooth_actions_data(df_actions_grid_normalized, actions_grid_matrix_shape=(12, 8))
-    df_actions_grid_smoothed.to_csv(r"..\output\actions_grid_smoothed.csv")
+    #df_actions_grid = df_actions_grid.loc[df_actions_grid["player_id"] == 3567]
+    #$df_players_total_played_time = df_players_total_played_time.loc[df_players_total_played_time["player_id"] == 3567]
+    df_actions_grid_normalized = df_actions_grid.merge(df_players_total_played_time, on="player_id", how="inner", validate="m:1")
+    df_actions_grid_normalized["Shot"] /= df_actions_grid_normalized["play_duration"]
+    df_actions_grid_normalized["Pass"] /= df_actions_grid_normalized["play_duration"]
+    df_actions_grid_normalized["Dribble"] /= df_actions_grid_normalized["play_duration"]
+    #df_actions_grid_normalized = normalize_actions_data(df_actions_grid_temp, df_players_total_played_time)
+    df_actions_grid_normalized.drop(columns=["play_duration"], inplace=True)
+    df_actions_grid_normalized.to_csv(ACTIONS_GRID_NORMALIZED_FILE_PATH, index=False)
+    df_actions_grid_smoothed = smooth_actions_data(df_actions_grid_normalized, actions_grid_matrix_shape=ACTIONS_GRID_SHAPE)
+    df_actions_grid_smoothed.to_csv(ACTIONS_GRID_SMOOTHED_FILE_PATH, index=False)
     actions_heatmap, compressed_actions_heatmap = compress_heatmap(df_actions_grid)
     save_heatmaps(actions_heatmap, compressed_actions_heatmap, OUTPUT_DIR_PATH)
