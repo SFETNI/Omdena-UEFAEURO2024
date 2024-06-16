@@ -5,7 +5,7 @@ import pandas as pd
 from sklearn.decomposition import NMF
 
 
-ACTIONS_GRID_SHAPE = (30, 20)
+ACTIONS_GRID_SHAPE = (60, 40)
 OUTPUT_DIR_PATH = os.path.join(os.path.dirname(__file__), "..", "output")
 ACTIONS_GRID_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "actions_grid.csv")
 ACTIONS_GRID_NORMALIZED_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "actions_grid_normalized.csv")
@@ -13,7 +13,7 @@ ACTIONS_GRID_SMOOTHED_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "actions_grid_sm
 PLAYERS_TOTAL_PLAYED_TIME_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "players_total_played_time.csv")
 
 
-def load_data(actions_grid_file_path: str, players_total_played_time_file_path: str):
+def load_data(actions_grid_file_path: str, players_total_played_time_file_path: str, action_grid_shape: tuple[int, int]):
     df_actions_grid = pd.read_csv(actions_grid_file_path, converters={
         "player_id": int, "Pass": float, "Show": float, "Dribble": float, "grid_index": int})
     df_players_total_played_time = pd.read_csv(players_total_played_time_file_path)
@@ -22,6 +22,13 @@ def load_data(actions_grid_file_path: str, players_total_played_time_file_path: 
     # See extract_players_played_time.py for the details why is this necessary.
     unique_player_ids = df_players_total_played_time["player_id"].unique()
     df_actions_grid = df_actions_grid.loc[df_actions_grid["player_id"].isin(unique_player_ids)]
+    max_tiles = action_grid_shape[0] * action_grid_shape[1]
+    df_players = pd.DataFrame(unique_player_ids, columns=["player_id"])
+    df_grids = pd.DataFrame(range(max_tiles), columns=["grid_index"])
+    df_players_grids = df_players.join(df_grids, how="cross")
+
+    df_actions_grid = df_actions_grid.merge(df_players_grids, how="right", on=["player_id", "grid_index"])
+    df_actions_grid[["Shot", "Pass", "Dribble"]] = df_actions_grid[["Shot", "Pass", "Dribble"]].fillna(0)
 
     return df_actions_grid, df_players_total_played_time
 
@@ -64,14 +71,15 @@ def get_gaussian_kernel(kernel_radius=1):
 def smooth_action(df_player_action_grid: pd.DataFrame, action_type: str, actions_grid_matrix_shape: tuple, smoothing_kernel: np.array):
     kernel_half_width = int(smoothing_kernel.shape[0]/2)
     kernel_half_height = int(smoothing_kernel.shape[1]/2)
+    player_id = df_player_action_grid["player_id"].unique()[0]
 
-    shots_matrix = df_player_action_grid[action_type].values.reshape(actions_grid_matrix_shape[0],
-                                                                actions_grid_matrix_shape[1])
+    action_type_matrix = df_player_action_grid[action_type].values.reshape(
+        actions_grid_matrix_shape[0], actions_grid_matrix_shape[1])
     temp_matrix = np.zeros([actions_grid_matrix_shape[0] + kernel_half_width*2,
                            actions_grid_matrix_shape[1] + kernel_half_height*2])
     temp_matrix[kernel_half_width:temp_matrix.shape[0] - kernel_half_width,
-                kernel_half_height:temp_matrix.shape[1] - kernel_half_height] = shots_matrix
-    smoothed_shots_matrix = np.zeros(shots_matrix.shape)
+                kernel_half_height:temp_matrix.shape[1] - kernel_half_height] = action_type_matrix
+    smoothed_shots_matrix = np.zeros(action_type_matrix.shape)
     for i in range(kernel_half_width, temp_matrix.shape[0] - kernel_half_width):
         for j in range(kernel_half_height, temp_matrix.shape[1] - kernel_half_height):
             smoothed_shots_matrix[i - kernel_half_width, j - kernel_half_height] = (
@@ -130,7 +138,9 @@ def save_heatmaps(action_heatmap: dict[str, np.array],
 
 
 if __name__ == "__main__":
-    df_actions_grid, df_players_total_played_time = load_data(ACTIONS_GRID_FILE_PATH, PLAYERS_TOTAL_PLAYED_TIME_FILE_PATH)
+    df_actions_grid, df_players_total_played_time = load_data(ACTIONS_GRID_FILE_PATH,
+                                                              PLAYERS_TOTAL_PLAYED_TIME_FILE_PATH,
+                                                              ACTIONS_GRID_SHAPE)
     #df_actions_grid = df_actions_grid.loc[df_actions_grid["player_id"] == 3567]
     #$df_players_total_played_time = df_players_total_played_time.loc[df_players_total_played_time["player_id"] == 3567]
     df_actions_grid_normalized = df_actions_grid.merge(df_players_total_played_time, on="player_id", how="inner", validate="m:1")
