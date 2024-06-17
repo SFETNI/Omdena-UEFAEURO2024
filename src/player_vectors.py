@@ -1,5 +1,6 @@
 import os
 import math
+import time
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import NMF
@@ -11,6 +12,7 @@ ACTIONS_GRID_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "actions_grid.csv")
 ACTIONS_GRID_NORMALIZED_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "actions_grid_normalized.csv")
 ACTIONS_GRID_SMOOTHED_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "actions_grid_smoothed.csv")
 PLAYERS_TOTAL_PLAYED_TIME_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "players_total_played_time.csv")
+COMPONENTS_PER_ACTION = { "Shot": 10, "Pass": 10, "Dribble": 10 }
 
 
 def load_data(actions_grid_file_path: str, players_total_played_time_file_path: str, action_grid_shape: tuple[int, int]):
@@ -104,7 +106,7 @@ def smooth_actions_data(df_actions_grid: pd.DataFrame, actions_grid_matrix_shape
     return df_actions_grid_smoothed
 
 
-def compress_heatmap(df_actions_grid: pd.DataFrame):
+def compress_heatmap(df_actions_grid: pd.DataFrame, components_per_action: dict, max_iter: int=1000):
     actions_heatmap = {}
     action_types =  ["Dribble", "Shot", "Pass"]
 
@@ -113,16 +115,19 @@ def compress_heatmap(df_actions_grid: pd.DataFrame):
         for action_type in action_types:
             player_actions = df_actions_grid.loc[df_actions_grid["player_id"] == player_id][action_type].to_numpy()
             if action_type not in actions_heatmap:
-                actions_heatmap[action_type] = player_actions
+                #actions_heatmap[action_type] = player_actions
+                actions_heatmap[action_type] = player_actions.reshape((player_actions.shape[0], 1))
             else:
-                actions_heatmap[action_type] = np.vstack([actions_heatmap[action_type], player_actions])
+                #actions_heatmap[action_type] = np.vstack([actions_heatmap[action_type], player_actions])
+                actions_heatmap[action_type] = np.hstack([actions_heatmap[action_type], player_actions.reshape((player_actions.shape[0], 1))])
 
     compressed_actions_heatmap = {}
     for action_type, heatmap in actions_heatmap.items():
-        model = NMF(n_components=2, init='random', random_state=0)
-        H = model.fit_transform(heatmap)
-        W = model.components_
+        model = NMF(n_components=components_per_action[action_type], init='random', random_state=0, max_iter=max_iter)
+        W = model.fit_transform(heatmap)
+        H = model.components_
         compressed_actions_heatmap[action_type] = (W, H)
+        print(f"NMF reconstruction error for action '{action_type}: {model.reconstruction_err_}")
 
     return actions_heatmap, compressed_actions_heatmap
 
@@ -138,11 +143,13 @@ def save_heatmaps(action_heatmap: dict[str, np.array],
 
 
 if __name__ == "__main__":
+    start_time = time.time()
     df_actions_grid, df_players_total_played_time = load_data(ACTIONS_GRID_FILE_PATH,
                                                               PLAYERS_TOTAL_PLAYED_TIME_FILE_PATH,
                                                               ACTIONS_GRID_SHAPE)
     #df_actions_grid = df_actions_grid.loc[df_actions_grid["player_id"] == 3567]
     #$df_players_total_played_time = df_players_total_played_time.loc[df_players_total_played_time["player_id"] == 3567]
+    """
     df_actions_grid_normalized = df_actions_grid.merge(df_players_total_played_time, on="player_id", how="inner", validate="m:1")
     df_actions_grid_normalized["Shot"] /= df_actions_grid_normalized["play_duration"]
     df_actions_grid_normalized["Pass"] /= df_actions_grid_normalized["play_duration"]
@@ -152,5 +159,8 @@ if __name__ == "__main__":
     df_actions_grid_normalized.to_csv(ACTIONS_GRID_NORMALIZED_FILE_PATH, index=False)
     df_actions_grid_smoothed = smooth_actions_data(df_actions_grid_normalized, actions_grid_matrix_shape=ACTIONS_GRID_SHAPE)
     df_actions_grid_smoothed.to_csv(ACTIONS_GRID_SMOOTHED_FILE_PATH, index=False)
-    actions_heatmap, compressed_actions_heatmap = compress_heatmap(df_actions_grid)
+    """
+    actions_heatmap, compressed_actions_heatmap = compress_heatmap(df_actions_grid, COMPONENTS_PER_ACTION)
     save_heatmaps(actions_heatmap, compressed_actions_heatmap, OUTPUT_DIR_PATH)
+    end_time = time.time()
+    print(f"Load events elapsed time: {end_time - start_time}s")
