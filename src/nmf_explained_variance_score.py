@@ -1,4 +1,5 @@
 import os
+import consts
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_squared_error
@@ -12,13 +13,12 @@ PLAYER_ID = 5562
 #PLAYER_ID = 5743
 # Messi
 #PLAYER_ID = 5503
-OUTPUT_DIR_PATH = os.path.join(os.path.dirname(__file__), "..", "output")
 ACTION_TYPE = "Dribble"
-action_heatmap = np.load(os.path.join(OUTPUT_DIR_PATH, f"actions_heatmap_{ACTION_TYPE}.npy"))
-action_heatmap_H = np.load(os.path.join(OUTPUT_DIR_PATH, f"compressed_heatmap_{ACTION_TYPE}_H.npy"))
-action_heatmap_W = np.load(os.path.join(OUTPUT_DIR_PATH, f"compressed_heatmap_{ACTION_TYPE}_W.npy"))
-reconstructed_action_heatmap = np.matmul(action_heatmap_H, action_heatmap_W)
-actions_grid_smoothed = pd.read_csv(os.path.join(OUTPUT_DIR_PATH, "actions_grid_smoothed.csv"))
+action_heatmap = np.load(os.path.join(consts.OUTPUT_DIR_PATH, f"actions_heatmap_{ACTION_TYPE}.npy"))
+action_heatmap_H = np.load(os.path.join(consts.OUTPUT_DIR_PATH, f"compressed_heatmap_{ACTION_TYPE}_H.npy"))
+action_heatmap_W = np.load(os.path.join(consts.OUTPUT_DIR_PATH, f"compressed_heatmap_{ACTION_TYPE}_W.npy"))
+reconstructed_action_heatmap = np.matmul(action_heatmap_W, action_heatmap_H)
+actions_grid_smoothed = pd.read_csv(os.path.join(consts.OUTPUT_DIR_PATH, "actions_grid_smoothed.csv"))
 row_index = np.where(actions_grid_smoothed["player_id"].unique() == PLAYER_ID)[0]
 #score = explained_variance_score(action_heatmap[row_index], reconstructed_action_heatmap[row_index])
 #mse = mean_squared_error(action_heatmap[row_index], reconstructed_action_heatmap[row_index])

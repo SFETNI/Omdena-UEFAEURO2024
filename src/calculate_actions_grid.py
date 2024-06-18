@@ -1,9 +1,7 @@
 import os
-
-os.environ["OPEN_DATA_REPO_PATH"] = r"C:\projects\statsbomb_open_data"
-
 import time
 import queue
+import consts
 import logging
 import pandas as pd
 import numpy as np
@@ -11,11 +9,9 @@ import multiprocessing as mp
 from statsbombpy_local import sb
 from concurrent.futures import ProcessPoolExecutor
 
+
 pd.options.mode.copy_on_write = True
 logger = logging.getLogger(__name__)
-STATSBOMB_OPEN_DATA_LOCAL_PATH = "C:\projects\statsbomb_open_data"
-FOOTBALL_PITCH_SIZE = (120, 80)
-HEATMAP_TILE_SIZE = (2, 2)
 
 
 def fill_actions_grid(row: object, actions_grid: pd.DataFrame, tile_width: int, tile_height: int, max_horizontal_tiles: int):
@@ -152,13 +148,14 @@ def create_actions_grid(df_actions: pd.DataFrame, football_pitch_size, heatmap_t
 
 
 if __name__ == "__main__":
-    logging.basicConfig(filename=r"..\output\app.log", level=logging.DEBUG)
-    matches_ids = get_matches_ids(os.path.join(STATSBOMB_OPEN_DATA_LOCAL_PATH, "data", "events"))
+    logging.basicConfig(filename=consts.APP_LOG_PATH, level=logging.DEBUG)
+    logger.debug(f"Stats bomb open data local path: {consts.STATSBOMB_OPEN_DATA_LOCAL_PATH}")
+    matches_ids = get_matches_ids(os.path.join(consts.STATSBOMB_OPEN_DATA_LOCAL_PATH, "data", "events"))
     start_time = time.time()
-    df_events = load_events(matches_ids, parallel_processes_count=8)
+    df_events = load_events(matches_ids, parallel_processes_count=4)
     #df_events = load_events_single_proc(matches_ids)
     end_time = time.time()
     print(f"Load events elapsed time: {end_time-start_time}s")
     df_actions = get_actions(df_events)
-    df_actions_grid = create_actions_grid(df_actions, FOOTBALL_PITCH_SIZE, HEATMAP_TILE_SIZE)
-    df_actions_grid.to_csv(r"..\output\actions_grid.csv", index=False)
+    df_actions_grid = create_actions_grid(df_actions, consts.FOOTBALL_PITCH_SIZE, consts.HEATMAP_TILE_SIZE)
+    df_actions_grid.to_csv(consts.ACTIONS_GRID_FILE_PATH, index=False)

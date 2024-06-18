@@ -1,8 +1,6 @@
 import os
-
-os.environ["OPEN_DATA_REPO_PATH"] = r"C:\projects\statsbomb_open_data"
-
 import queue
+import consts
 import logging
 import pandas as pd
 import numpy as np
@@ -10,9 +8,9 @@ import multiprocessing as mp
 from statsbombpy_local import sb
 from concurrent.futures import ProcessPoolExecutor
 
+
 pd.options.mode.copy_on_write = True
 logger = logging.getLogger(__name__)
-STATSBOMB_OPEN_DATA_LOCAL_PATH = "C:\projects\statsbomb_open_data"
 
 
 def get_matches_ids(data_path: str, max_events=-1):
@@ -91,14 +89,14 @@ def get_players_played_time(matches_ids: list[int], parallel_processes_count=os.
 
 
 if __name__ == "__main__":
-    logging.basicConfig(filename=r"..\output\app.log", level=logging.DEBUG)
-    matches_ids = get_matches_ids(os.path.join(STATSBOMB_OPEN_DATA_LOCAL_PATH, "data", "events"))
+    logging.basicConfig(filename=consts.APP_LOG_PATH, level=logging.DEBUG)
+    matches_ids = get_matches_ids(os.path.join(consts.STATSBOMB_OPEN_DATA_LOCAL_PATH, "data", "events"))
     df_players_played_time = get_players_played_time(matches_ids)
     # Remove rows with negative play_duration values.
     # Negative play_duration value means that the player entered the match as a substitute in the overtime.
     # This is done because there are no data fields in the dataset containing exact values for the match duration.
     df_players_played_time = df_players_played_time[df_players_played_time["play_duration"] > 0]
-    df_players_played_time.to_csv(r"..\output\players_played_time.csv", index=False)
+    df_players_played_time.to_csv(consts.PLAYERS_PLAYED_TIME_FILE_PATH, index=False)
     df_all_players_total_played_time = (df_players_played_time[["player_id", "play_duration"]]
                                  .groupby(["player_id"]).sum().reset_index())
-    df_all_players_total_played_time.to_csv(r"..\output\players_total_played_time.csv", index=False)
+    df_all_players_total_played_time.to_csv(consts.PLAYERS_TOTAL_PLAYED_TIME_FILE_PATH, index=False)
