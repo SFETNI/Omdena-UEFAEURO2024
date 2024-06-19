@@ -2,8 +2,10 @@ import os
 from pathlib import Path
 
 
+SQUADS_FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "Datasets", "euro2024_squads.csv")
 OUTPUT_DIR_PATH = os.path.join(os.path.dirname(__file__), "..", "output")
 APP_LOG_PATH = os.path.join(OUTPUT_DIR_PATH, "app.log")
+PLAYER_STYLE_MANHATTAN_DISTANCE_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "manhattan_distance.csv")
 ACTIONS_GRID_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "actions_grid.csv")
 PLAYERS_PLAYED_TIME_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "players_played_time.csv")
 PLAYERS_TOTAL_PLAYED_TIME_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "players_total_played_time.csv")
