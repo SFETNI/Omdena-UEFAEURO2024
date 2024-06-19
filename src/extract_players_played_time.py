@@ -41,8 +41,9 @@ def calculate_player_total_play_duration(row):
 def find_player_played_duration(matches_queue: queue.Queue,
                                     players_total_play_duration_queue: queue.Queue):
     df_all_players_total_play_duration = pd.DataFrame(
-        np.array([], dtype=[("match_id", np.int32), ("player_id", np.int32), ("play_duration", np.int32)]),
-        columns=["match_id", "player_id", "play_duration"])
+        np.array([], dtype=[("match_id", np.int32), ("player_id", np.int32), ("player_name", str),
+                            ("player_nickname", str), ("country", str), ("play_duration", np.int32)]),
+        columns=["match_id", "player_id", "player_name", "player_nickname", "country", "play_duration"])
     matches_ids = matches_queue.get()
 
     for match_id in matches_ids:
@@ -51,7 +52,8 @@ def find_player_played_duration(matches_queue: queue.Queue,
             df_team_lineup["play_duration"] = df_team_lineup.apply(calculate_player_total_play_duration, axis=1)
             df_team_lineup["match_id"] = match_id
             df_all_players_total_play_duration = pd.concat([df_all_players_total_play_duration,
-                                                            df_team_lineup[["match_id", "player_id", "play_duration"]]],
+                                                            df_team_lineup[["match_id", "player_id", "player_name",
+                                                                            "player_nickname", "country", "play_duration"]]],
                                                            ignore_index=True)
 
     players_total_play_duration_queue.put(df_all_players_total_play_duration)
@@ -96,7 +98,9 @@ if __name__ == "__main__":
     # Negative play_duration value means that the player entered the match as a substitute in the overtime.
     # This is done because there are no data fields in the dataset containing exact values for the match duration.
     df_players_played_time = df_players_played_time[df_players_played_time["play_duration"] > 0]
+    df_players_played_time["player_nickname"] = df_players_played_time["player_nickname"].fillna("NoNickname")
     df_players_played_time.to_csv(consts.PLAYERS_PLAYED_TIME_FILE_PATH, index=False)
-    df_all_players_total_played_time = (df_players_played_time[["player_id", "play_duration"]]
-                                 .groupby(["player_id"]).sum().reset_index())
+    df_all_players_total_played_time = (df_players_played_time[[
+        "player_id", "player_name","player_nickname", "country", "play_duration"]].groupby([
+        "player_id","player_name","player_nickname", "country"]).sum().reset_index())
     df_all_players_total_played_time.to_csv(consts.PLAYERS_TOTAL_PLAYED_TIME_FILE_PATH, index=False)
