@@ -72,6 +72,9 @@ if __name__ == "__main__":
     df_manhattan_distance = df_manhattan_distance.loc[df_manhattan_distance["player_id"] != df_manhattan_distance["player_id_right"]]
     df_manhattan_distance["distance"] = df_manhattan_distance.apply(calculate_mahattan_distance, axis=1, args=(
         unique_player_ids, shot_action_heatmap_H, pass_action_heatmap_H, dribble_action_heatmap_H))
+    # Remove rows where Manhattan distance is 0.0 because it is a strong indication that there are not enough
+    # data stored in the actions grid.
+    df_manhattan_distance = df_manhattan_distance.loc[df_manhattan_distance["distance"] != 0.0]
     df_manhattan_distance.to_csv(consts.PLAYER_STYLE_MANHATTAN_DISTANCE_FILE_PATH, index=False)
     elapsed_time = time.time() - start_time
     print(f"Elapsed time: {elapsed_time}")
