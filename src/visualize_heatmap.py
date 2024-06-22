@@ -10,16 +10,16 @@ from scipy.ndimage import gaussian_filter
 
 
 FOOTBALL_PITCH_TILES = consts.ACTIONS_GRID_SHAPE
-PLAYER_ID = 5562
+PLAYER_ID = 5574
 ACTION_TYPE = "Pass"
 
 action_heatmap = np.load(os.path.join(consts.OUTPUT_DIR_PATH, f"actions_heatmap_{ACTION_TYPE}.npy"))
 action_heatmap_H = np.load(os.path.join(consts.OUTPUT_DIR_PATH, f"compressed_heatmap_{ACTION_TYPE}_H.npy"))
 action_heatmap_W = np.load(os.path.join(consts.OUTPUT_DIR_PATH, f"compressed_heatmap_{ACTION_TYPE}_W.npy"))
 reconstructed_action_heatmap = np.matmul(action_heatmap_W, action_heatmap_H)
-actions_grid_smoothed = pd.read_csv(os.path.join(consts.OUTPUT_DIR_PATH, "actions_grid_smoothed.csv"))
+actions_grid_smoothed = pd.read_csv(consts.START_ACTIONS_GRID_SMOOTHED_FILE_PATH)
 row_index = np.where(actions_grid_smoothed["player_id"].unique() == PLAYER_ID)[0]
-action_grid_smoothed = actions_grid_smoothed.loc[actions_grid_smoothed["player_id"] == PLAYER_ID][ACTION_TYPE].to_numpy()
+#actions = action_heatmap_W[:, 0]
 
 # setup pitch
 pitch = Pitch(pitch_type='statsbomb', line_zorder=2,
@@ -28,7 +28,9 @@ pitch = Pitch(pitch_type='statsbomb', line_zorder=2,
 fig, ax = pitch.draw(figsize=(12, 8))
 fig.set_facecolor('#22312b')
 
-player_action_heatmap = action_heatmap[:, row_index]#reconstructed_action_heatmap[row_index]
+action_heatmap_flattened = action_heatmap[:, row_index].flatten()
+start_plus_end_tiles = action_heatmap_flattened[:96]+action_heatmap_flattened[96:]
+player_action_heatmap = start_plus_end_tiles
 player_action_heatmap = player_action_heatmap.reshape(FOOTBALL_PITCH_TILES)
 
 y, x = player_action_heatmap.shape
