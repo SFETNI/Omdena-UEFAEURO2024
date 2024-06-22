@@ -103,4 +103,11 @@ if __name__ == "__main__":
     df_all_players_total_played_time = (df_players_played_time[[
         "player_id", "player_name","player_nickname", "country", "play_duration"]].groupby([
         "player_id","player_name","player_nickname", "country"]).sum().reset_index())
+    # Remove all rows that have the duplicate player_id values.
+    # This occurs when the same player has different nickname and country in dataset.
+    df_all_players_total_played_time['cnt_player_id'] = df_all_players_total_played_time.groupby(
+        'player_id')['player_id'].transform('count')
+    select_players_with_redundant_player_ids = df_all_players_total_played_time["cnt_player_id"] == 1
+    df_all_players_total_played_time = df_all_players_total_played_time[select_players_with_redundant_player_ids]
+    df_all_players_total_played_time.drop('cnt_player_id', axis=1, inplace=True)
     df_all_players_total_played_time.to_csv(consts.PLAYERS_TOTAL_PLAYED_TIME_FILE_PATH, index=False)
