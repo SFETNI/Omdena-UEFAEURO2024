@@ -2,6 +2,7 @@ import os
 import sys
 import math
 import queue
+import consts
 import logging
 import numpy as np
 import pandas as pd
@@ -14,10 +15,6 @@ from multiprocessing import current_process
 from concurrent.futures import ProcessPoolExecutor
 
 
-OUTPUT_DIR_PATH = os.path.join(os.path.dirname(__file__), "..", "output")
-APP_LOG_PATH = os.path.join(OUTPUT_DIR_PATH, "app.log")
-STATSBOMB_OPEN_DATA_LOCAL_PATH = os.environ["OPEN_DATA_REPO_PATH"]
-DATA_FILE_PATH = os.path.join(OUTPUT_DIR_PATH, "data.csv")
 logger = logging.getLogger(__name__)
 pd.options.mode.copy_on_write = True
 
@@ -41,6 +38,11 @@ def update_nan_timestamp(row, match_end_timestamp):
     return row["formation_play_duration"]
 
 
+def set_formation_value(row):
+    if isinstance(row, dict):
+        return row["formation"]
+    return ""
+
 def normalize_action_data(df_data: pd.DataFrame, match_end_timestamp: timedelta) -> pd.DataFrame:
     df_data_normalized = df_data.copy()
     # If the formation_play_duration_ration value is 1 it means that the formation is being played for the entire match.
@@ -55,14 +57,16 @@ def normalize_action_data(df_data: pd.DataFrame, match_end_timestamp: timedelta)
     return df_data_normalized
 
 
-def filter_actions(df_events: pd.DataFrame, df_tactics: pd.DataFrame, match_id: int) -> pd.DataFrame:
+def get_match_kpi(df_events: pd.DataFrame, df_data_points: pd.DataFrame, match_id: int) -> pd.DataFrame:
     actions_filter = ((df_events.under_pressure == True) | (df_events.counterpress == True) |
                       (df_events.type == "Shot") | (df_events.type == "Pass"))
     df_selected_actions = df_events.loc[actions_filter]
     df_selected_actions["timestamp"] = pd.to_datetime(df_selected_actions["timestamp"], format='%H:%M:%S.%f')
-    for index, row in df_tactics.iterrows():
+    for index, row in df_data_points.iterrows():
         df_selected_actions.loc[((df_selected_actions["team"] == row["team"]) &
                                  (df_selected_actions.timestamp > row["timestamp"])), "formation"] = row["formation"]
+        df_selected_actions.loc[((df_selected_actions["team"] != row["team"]) &
+                                 (df_selected_actions.timestamp > row["timestamp"])), "opposing_team_formation"] = row["formation"]
     df_selected_actions["pass"] = 0
     df_selected_actions["shot"] = 0
     df_selected_actions["score"] = 0
@@ -92,48 +96,78 @@ def get_match_end_timestamp(df_events: pd.DataFrame, period: int = 1) -> timedel
     return match_end_total_timestamp
 
 
-def get_match_tactics(df_events: pd.DataFrame, match_id: int) -> pd.DataFrame:
-    tactics_filter = (df_events.type == "Starting XI") | (df_events.type == "Tactical Shift")
-    df_tactics = df_events.loc[tactics_filter][["team", "tactics", "timestamp", "period"]]
-    df_tactics.reset_index(drop=True, inplace=True)
-    df_tactics["timestamp"] = pd.to_datetime(df_tactics["timestamp"], format="%H:%M:%S.%f")
+def get_data_points(df_events: pd.DataFrame, match_id: int) -> pd.DataFrame:
+    data_points_filter = ((df_events.type == "Starting XI") | (df_events.type == "Tactical Shift") |
+                          ((df_events.type == "Half End") & (df_events.period == 1)) |
+                          (df_events.shot_outcome == "Goal") |
+                          ((df_events.type == "Bad Behaviour") & (df_events.get("bad_behaviour_card") == "Red Card")) |
+                          ((df_events.type == "Foul Committed") & (df_events.get("foul_committed_card") == "Red Card"))
+                          )
+    df_data_points = df_events.loc[data_points_filter][["team", "tactics", "timestamp", "shot_outcome", "type", "period"]]
+    df_data_points.reset_index(drop=True, inplace=True)
+    df_data_points["timestamp"] = pd.to_datetime(df_data_points["timestamp"], format="%H:%M:%S.%f")
     # Change timestamp to range from 0 to 90 minutes.
     half_end_timestamp = get_match_end_timestamp(df_events)
-    df_tactics.loc[df_tactics.period == 2, "timestamp"] += timedelta(minutes=half_end_timestamp.minute,
-                                                                     seconds=half_end_timestamp.second,
-                                                                     microseconds=half_end_timestamp.microsecond)
-    df_red_card_events = df_events.loc[
-        ((df_events.type == "Bad Behaviour") & (df_events.get("bad_behaviour_card") == "Red Card")) |
-        ((df_events.type == "Foul Committed") & (df_events.get("foul_committed_card") == "Red Card"))
-    ]
+    df_data_points.loc[df_data_points.period == 2, "timestamp"] += timedelta(minutes=half_end_timestamp.minute,
+                                                                             seconds=half_end_timestamp.second,
+                                                                             microseconds=half_end_timestamp.microsecond)
+    df_red_card_events = df_data_points.loc[
+        ((df_data_points.type == "Bad Behaviour") & (df_data_points.get("bad_behaviour_card") == "Red Card")) |
+        ((df_data_points.type == "Foul Committed") & (df_data_points.get("foul_committed_card") == "Red Card"))
+        ]
     if df_red_card_events is not None and len(df_red_card_events.index) > 0:
         logger.debug(f"There are {len(df_red_card_events.index)} red cards in the match with in ID {match_id}.")
         # Select just the first red card event. We are not interested in the rest of the events because the
         # first red card event will mark the end of the match.
         first_red_card_event_timestamp = datetime.strptime(df_red_card_events.iloc[0]["timestamp"], "%H:%M:%S.%f")
-        df_tactics_filtered = df_tactics.loc[df_tactics["timestamp"] < first_red_card_event_timestamp]
-        logger.debug(f"Number of tactics change events prior to the red card event: {len(df_tactics_filtered)}")
-        logger.debug(f"Total number of tactics change events: {len(df_tactics)}")
-        df_tactics = df_tactics_filtered
-        if df_tactics is None or len(df_tactics) == 0:
+        df_data_points_filtered = df_data_points.loc[df_data_points["timestamp"] <= first_red_card_event_timestamp]
+        logger.debug(f"Number of change events prior to the red card event: {len(df_data_points_filtered)}")
+        logger.debug(f"Total number of tactics change events: {len(df_data_points)}")
+        df_data_points = df_data_points_filtered
+        if df_data_points is None or len(df_data_points) == 0:
             return None
         # Match events collection should end with the first red card event.
         match_end_timestamp = first_red_card_event_timestamp
-    df_tactics["formation"] = df_tactics["tactics"].apply(lambda row: row["formation"]).astype(str)
-    df_tactics["diffs"] = df_tactics.groupby(by=["team"])["timestamp"].diff()
+    #df_data_points[df_data_points["tactics"].isna() == False, "formation"] = df_data_points["tactics"].apply(lambda row: row["formation"]).astype(str)
+    df_data_points["formation"] = df_data_points["tactics"].apply(set_formation_value).astype(str)
+    # Set the formation value for the events that are not related to the changes in tactics.
+    # Use the value for the formation from the last row that is related to the change in tactics event.
+    while "" in df_data_points["formation"].unique():
+        teams = df_data_points.team.unique()
+        for team in teams:
+            df_team = df_data_points.loc[df_data_points["team"] == team]
+            df_team.loc[((df_team["formation"] == "") & (df_data_points["team"] == team)), "formation"] = df_team["formation"].shift(1)
+            df_data_points.loc[df_data_points["team"] == team] = df_team
+    # Prior calculating the timestamps diff values the data points DataFrame needs to be sorted by the timestamp
+    # column in the asceding order.
+    df_data_points.sort_values(by="timestamp", inplace=True)
+    df_data_points.reset_index(inplace=True)
+    df_data_points["diffs"] = df_data_points.groupby(by=["team"])["timestamp"].diff()
     # Shift values in colums with timestamp differences up one row
-    df_tactics["formation_play_duration"] = df_tactics.groupby(by=["team"])["diffs"].transform(lambda r: r.shift(-1))
+    df_data_points["formation_play_duration"] = df_data_points.groupby(by=["team"])["diffs"].transform(lambda r: r.shift(-1))
     match_end_timestamp = get_match_end_timestamp(df_events, period=2)
-    df_tactics["formation_play_duration"] = df_tactics.apply(update_nan_timestamp, args=(match_end_timestamp,), axis=1)
-    df_tactics.drop(columns=["tactics", "diffs", "period"], inplace=True)
+    df_data_points["formation_play_duration"] = df_data_points.apply(update_nan_timestamp, args=(match_end_timestamp,), axis=1)
+    df_data_points.drop(columns=["tactics", "diffs", "period"], inplace=True)
+    home_team = df_events.iloc[0]["team"]
+    away_team = df_events.iloc[1]["team"]
+    df_data_points["goal_difference"] = 0
+    df_data_points["number_of_goals"] = 0
+    for index, row in df_data_points.iloc[2:].iterrows():
+        if row["shot_outcome"] == "Goal":
+            df_data_points.loc[df_data_points["timestamp"] > row["timestamp"], "number_of_goals"] += 1
+            df_data_points.loc[(df_data_points["team"] == row["team"]) &
+                               (df_data_points["timestamp"] > row["timestamp"]), "goal_difference"] += 1
+            df_data_points.loc[(df_data_points["team"] != row["team"]) &
+                               (df_data_points["timestamp"] > row["timestamp"]), "goal_difference"] -= 1
 
-    return df_tactics
+    return df_data_points
 
 
 def extract_data_worker(matches_queue: queue.Queue, fetched_data_queue: queue.Queue) -> None:
     pd.options.mode.copy_on_write = True
     matches_ids = matches_queue.get()
-    df_data = None
+    df_data_points_total = None
+    df_match_kpi_total = None
 
     logger = logging.getLogger()
     # log all messages, debug and up
@@ -143,70 +177,85 @@ def extract_data_worker(matches_queue: queue.Queue, fetched_data_queue: queue.Qu
 
     for match_id in matches_ids:
         df_events = sb.events(match_id=match_id)
-        df_tactics = get_match_tactics(df_events, match_id)
-        # The tactics DataFrame can be empty in case of red card event that happend early in the match.
-        # In that case skip processing the match.
-        if df_tactics is None or len(df_tactics) == 0:
+        df_data_points = get_data_points(df_events, match_id)
+        if df_data_points is None or len(df_data_points) == 0:
             continue
-        df_selected_actions = filter_actions(df_events, df_tactics, match_id)
-        df_tactics_groupped = df_tactics[["team", "formation", "formation_play_duration"]].groupby(
-            by=["team", "formation"]).sum().reset_index()
-        df_actions_groupped = df_selected_actions[
-            ["match_id", "team", "formation", "shot", "pass", "under_pressure", "score", "counterpress"]].groupby(
-            by=["match_id", "team", "formation"]).sum().reset_index()
-        df_actions_groupped = df_actions_groupped.merge(df_tactics_groupped, how="inner", on=["team", "formation"])
+        df_data_points["match_id"] = match_id
+        df_match_kpi = get_match_kpi(df_events, df_data_points, match_id)
+        df_match_kpi_groupped = df_match_kpi[
+            ["match_id", "team", "formation", "opposing_team_formation",
+             "shot", "pass", "under_pressure", "score", "counterpress"]].groupby(
+            by=["match_id", "team", "formation", "opposing_team_formation"]).sum().reset_index()
+        df_data_points_groupped = (df_data_points[["team", "formation", "formation_play_duration"]]
+                                   .groupby(by=["team", "formation"])).sum().reset_index()
+        df_match_kpi_groupped = df_match_kpi_groupped.merge(df_data_points_groupped, how="inner",
+                                                            on=["team", "formation"])
         match_end_timestamp = get_match_end_timestamp(df_events, period=2)
-        df_actions_groupped = normalize_action_data(df_actions_groupped, match_end_timestamp)
+        df_match_kpi_groupped = normalize_action_data(df_match_kpi_groupped, match_end_timestamp)
         home_team = df_events.iloc[0]["team"]
         away_team = df_events.iloc[1]["team"]
-        df_actions_groupped["home_or_away"] = 1
-        df_actions_groupped.loc[df_actions_groupped["team"] == away_team, "home_or_away"] = 0
-        df_data = df_actions_groupped.copy() if df_data is None else pd.concat([df_data, df_actions_groupped])
+        df_match_kpi_groupped["home_or_away"] = 1
+        df_match_kpi_groupped.loc[df_match_kpi_groupped["team"] == away_team, "home_or_away"] = 0
+        df_goals = df_events.loc[df_events.shot_outcome == "Goal"]
+        df_match_kpi_groupped["goals"] = len(df_goals)
+        df_data_points_total = df_data_points.copy() if df_data_points_total is None else pd.concat(
+            [df_data_points_total, df_data_points])
+        df_match_kpi_total = df_match_kpi_groupped.copy() if df_match_kpi_total is None else pd.concat(
+            [df_match_kpi_total, df_match_kpi_groupped])
 
-    mean_expected_goals = df_data["goals"].sum() / len(df_data)
-    df_data["mean_expected_goals_per_game"] = mean_expected_goals
-    df_data["goals_diffs_from_mean"] = df_data["goals"] - df_data["mean_expected_goals_per_game"]
-    df_data["variance_of_expected_goals_per_game"] = df_data["goals_diffs_from_mean"].pow(2) / len(df_data)
-    df_data.drop(columns=["goals_diffs_from_mean"], inplace=True)
+    mean_expected_goals = df_match_kpi_total["goals"].sum() / len(df_match_kpi_total)
+    df_match_kpi_total["mean_expected_goals_per_game"] = mean_expected_goals
+    df_match_kpi_total["goals_diffs_from_mean"] = df_match_kpi_total["goals"] - df_match_kpi_total[
+        "mean_expected_goals_per_game"]
+    df_match_kpi_total["variance_of_expected_goals_per_game"] = df_match_kpi_total["goals_diffs_from_mean"].pow(
+        2) / len(df_match_kpi_total)
+    df_match_kpi_total.drop(columns=["goals_diffs_from_mean"], inplace=True)
 
-    fetched_data_queue.put(df_data)
+    fetched_data_queue.put((df_match_kpi_total, df_data_points_total))
     matches_queue.task_done()
 
 
 def extract_data_single_proc(matches_ids: list[int]) -> pd.DataFrame:
-    df_data = None
+    df_data_points_total = None
+    df_match_kpi_total = None
 
     for match_id in matches_ids:
         df_events = sb.events(match_id=match_id)
-        df_tactics = get_match_tactics(df_events, match_id)
-        # The tactics DataFrame can be empty in case of red card event that happend early in the match.
-        # In that case skip processing the match.
-        if df_tactics is None or len(df_tactics) == 0:
+        df_data_points = get_data_points(df_events, match_id)
+        if df_data_points is None or len(df_data_points) == 0:
             continue
-        df_selected_actions = filter_actions(df_events, df_tactics, match_id)
-        df_tactics_groupped = df_tactics[["team", "formation", "formation_play_duration"]].groupby(
-            by=["team", "formation"]).sum().reset_index()
-        df_actions_groupped = df_selected_actions[
-            ["match_id", "team", "formation", "shot", "pass", "under_pressure", "score", "counterpress"]].groupby(
-            by=["match_id", "team", "formation"]).sum().reset_index()
-        df_actions_groupped = df_actions_groupped.merge(df_tactics_groupped, how="inner", on=["team", "formation"])
+        df_data_points["match_id"] = match_id
+        df_match_kpi = get_match_kpi(df_events, df_data_points, match_id)
+        df_match_kpi_groupped = df_match_kpi[
+            ["match_id", "team", "formation", "opposing_team_formation",
+             "shot", "pass", "under_pressure", "score", "counterpress"]].groupby(
+            by=["match_id", "team", "formation", "opposing_team_formation"]).sum().reset_index()
+        df_data_points_groupped = (df_data_points[["team", "formation", "formation_play_duration"]]
+                                   .groupby(by=["team", "formation"])).sum().reset_index()
+        df_match_kpi_groupped = df_match_kpi_groupped.merge(df_data_points_groupped, how="inner",
+                                                            on=["team", "formation"])
         match_end_timestamp = get_match_end_timestamp(df_events, period=2)
-        df_actions_groupped = normalize_action_data(df_actions_groupped, match_end_timestamp)
+        df_match_kpi_groupped = normalize_action_data(df_match_kpi_groupped, match_end_timestamp)
         home_team = df_events.iloc[0]["team"]
         away_team = df_events.iloc[1]["team"]
-        df_actions_groupped["home_or_away"] = 1
-        df_actions_groupped.loc[df_actions_groupped["team"] == away_team, "home_or_away"] = 0
+        df_match_kpi_groupped["home_or_away"] = 1
+        df_match_kpi_groupped.loc[df_match_kpi_groupped["team"] == away_team, "home_or_away"] = 0
         df_goals = df_events.loc[df_events.shot_outcome == "Goal"]
-        df_actions_groupped["goals"] = len(df_goals)
-        df_data = df_actions_groupped.copy() if df_data is None else pd.concat([df_data, df_actions_groupped])
+        df_match_kpi_groupped["goals"] = len(df_goals)
+        df_data_points_total = df_data_points.copy() if df_data_points_total is None else pd.concat(
+            [df_data_points_total, df_data_points])
+        df_match_kpi_total = df_match_kpi_groupped.copy() if df_match_kpi_total is None else pd.concat(
+            [df_match_kpi_total, df_match_kpi_groupped])
 
-    mean_expected_goals = df_data["goals"].sum()/len(df_data)
-    df_data["mean_expected_goals_per_game"] = mean_expected_goals
-    df_data["goals_diffs_from_mean"] = df_data["goals"] - df_data["mean_expected_goals_per_game"]
-    df_data["variance_of_expected_goals_per_game"] = df_data["goals_diffs_from_mean"].pow(2) / len(df_data)
-    df_data.drop(columns=["goals_diffs_from_mean"], inplace=True)
+    mean_expected_goals = df_match_kpi_total["goals"].sum() / len(df_match_kpi_total)
+    df_match_kpi_total["mean_expected_goals_per_game"] = mean_expected_goals
+    df_match_kpi_total["goals_diffs_from_mean"] = df_match_kpi_total["goals"] - df_match_kpi_total[
+        "mean_expected_goals_per_game"]
+    df_match_kpi_total["variance_of_expected_goals_per_game"] = df_match_kpi_total["goals_diffs_from_mean"].pow(
+        2) / len(df_match_kpi_total)
+    df_match_kpi_total.drop(columns=["goals_diffs_from_mean"], inplace=True)
 
-    return df_data
+    return (df_match_kpi_total, df_data_points_total)
 
 
 def extract_data(matches_ids: list[int], parallel_processes_count=os.cpu_count()) -> pd.DataFrame:
@@ -228,24 +277,33 @@ def extract_data(matches_ids: list[int], parallel_processes_count=os.cpu_count()
                          [fetched_data_queue]*parallel_processes_count)
         matches_queue.join()
         logger.debug(f"Fecthed data queue size: {fetched_data_queue.qsize()}")
-        df_data = None
+        df_match_kpi_total = None
+        df_data_points_total = None
         while not fetched_data_queue.empty():
-            df_temp = fetched_data_queue.get()
-            df_data = df_temp if df_data is None else pd.concat([df_data, df_temp])
+            df_match_kpi, df_data_points = fetched_data_queue.get()
+            df_data_points_total = df_data_points.copy() if df_data_points_total is None else pd.concat(
+                [df_data_points_total, df_data_points])
+            df_match_kpi_total = df_match_kpi.copy() if df_match_kpi_total is None else pd.concat(
+                [df_match_kpi_total, df_match_kpi])
 
-    return df_data
+    return (df_match_kpi_total, df_data_points_total)
 
 
 if __name__ == "__main__":
     start_time = time()
-    Path(OUTPUT_DIR_PATH).mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(level=logging.DEBUG, handlers=[logging.FileHandler(APP_LOG_PATH), logging.StreamHandler(sys.stdout)])
-    matches_ids = get_matches_ids(os.path.join(STATSBOMB_OPEN_DATA_LOCAL_PATH, "data", "events"))
+    Path(consts.OUTPUT_DIR_PATH).mkdir(parents=True, exist_ok=True)
+    Path(consts.DATASETS_DIR_PATH).mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(level=logging.DEBUG, handlers=[logging.FileHandler(consts.APP_LOG_PATH), logging.StreamHandler(sys.stdout)])
+    matches_ids = get_matches_ids(os.path.join(consts.STATSBOMB_OPEN_DATA_LOCAL_PATH, "data", "events"))
     logger.debug(f"Matches count: {len(matches_ids)}")
-    #df_data = extract_data(matches_ids, parallel_processes_count=6)
-    df_data = extract_data_single_proc(matches_ids)
-    df_data.sort_values(by="match_id", inplace=True)
-    df_data.to_csv(DATA_FILE_PATH, index=False)
+    df_match_kpi_total, df_data_points_total  = extract_data(matches_ids, parallel_processes_count=6)
+    #df_match_kpi_total, df_data_points_total = extract_data_single_proc(matches_ids[:4])
+    #df_match_kpi_total.sort_values(by="match_id", inplace=True)
+    df_data_points_total.sort_values(by="match_id", inplace=True)
+    df_match_kpi_total.reset_index(drop=True, inplace=True)
+    df_data_points_total.reset_index(drop=True, inplace=True)
+    df_match_kpi_total.to_csv(consts.MATCH_KPI_FILE_PATH, index=False)
+    df_data_points_total.to_csv(consts.DATA_POINTS_FILE_PATH, index=False)
     elapsed_time = time() - start_time
     logger.debug(f"Elapsed time: {elapsed_time}")
-    print(len(df_data))
+    print(len(df_match_kpi_total), len(df_data_points_total))
