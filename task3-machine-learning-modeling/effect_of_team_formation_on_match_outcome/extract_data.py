@@ -301,8 +301,8 @@ if __name__ == "__main__":
     #df_match_kpi_total.sort_values(by="match_id", inplace=True)
     df_data_points_total.sort_values(by="match_id", inplace=True)
     df_match_kpi_total.reset_index(drop=True, inplace=True)
-    df_data_points_total.reset_index(drop=True, inplace=True)
     df_match_kpi_total.to_csv(consts.MATCH_KPI_FILE_PATH, index=False)
+    df_data_points_total.reset_index(drop=True, inplace=True)
     df_data_points_total.to_csv(consts.DATA_POINTS_FILE_PATH, index=False)
     elapsed_time = time() - start_time
     logger.debug(f"Elapsed time: {elapsed_time}")
