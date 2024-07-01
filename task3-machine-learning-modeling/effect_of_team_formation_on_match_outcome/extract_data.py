@@ -51,7 +51,7 @@ def normalize_action_data(df_data: pd.DataFrame, match_end_timestamp: timedelta)
                                                             df_data["formation_play_duration"].dt.total_seconds())
     df_data_normalized["shot_mean"] = df_data["shot"] * df_data_normalized["formation_play_duration_ratio"]
     df_data_normalized["pass_mean"] = df_data["pass"] * df_data_normalized["formation_play_duration_ratio"]
-    df_data_normalized["under_mean"] = df_data["under_pressure"] * df_data_normalized["formation_play_duration_ratio"]
+    df_data_normalized["under_pressure_mean"] = df_data["under_pressure"] * df_data_normalized["formation_play_duration_ratio"]
     df_data_normalized["counterpress_mean"] = df_data["counterpress"] * df_data_normalized["formation_play_duration_ratio"]
 
     return df_data_normalized
