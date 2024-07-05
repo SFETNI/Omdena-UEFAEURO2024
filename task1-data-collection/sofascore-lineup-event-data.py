@@ -79,7 +79,7 @@ def main():
         'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
     }
 
-    matches = pd.read_csv('matches.csv')
+    matches = pd.read_csv('Datasets/matches.csv')
     match_list = matches['matches'].to_list()
     id_list = matches['match_id'].to_list()
 
@@ -88,7 +88,7 @@ def main():
         match_url = f'{base_url}/{match}/{match_id}'
         lineups = get_match_data(driver, match_url, headers)
         # if not lineups.empty:
-        lineups.to_csv('lineups.csv', mode='a', index=False, header=False)
+        lineups.to_csv('Datasets/lineups.csv', mode='a', index=False, header=False)
 
     driver.quit()
 
