@@ -87,8 +87,8 @@ def main():
     for match, match_id in zip(match_list, id_list):
         match_url = f'{base_url}/{match}/{match_id}'
         lineups = get_match_data(driver, match_url, headers)
-        if not lineups.empty:
-            lineups.to_csv('lineups.csv', mode='a', index=False, header=True)
+        # if not lineups.empty:
+        lineups.to_csv('lineups.csv', mode='a', index=False, header=True)
 
     driver.quit()
 
