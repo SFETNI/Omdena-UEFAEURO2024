@@ -1,4 +1,3 @@
-
 # Omdena Project: UEFA EURO 2024 Analytics
 
 ## Challenge Background
@@ -19,3 +18,25 @@ Assess the influence of EURO 2024 on tourism, analyzing data related to host cit
 
 ### Data Demonstration:
 Demonstrate the capability of machine learning and data analytics tools to interpret vast datasets, providing stakeholders with actionable insights into both sports and economic aspects.
+
+## Main Results
+
+### Player Performance Analysis:
+- Detailed analysis of player statistics such as goals, assists, and playing time.
+- Identification of key players and their impact on team performance.
+
+### Team Strategy Insights:
+- Visualization of tactical formations and in-game strategies.
+- Discovery of trends and shifts in team tactics over recent tournaments.
+
+### Machine Learning Models:
+- Application of decision trees, gradient boosting classifiers, linear and Lasso regression models, clustering, and neural networks for various analytical tasks.
+- Successful model training and evaluation using appropriate metrics such as accuracy, precision, recall, and AUC.
+
+## Project Documentation
+
+### Brainstorming File:
+The brainstorming file contains the major questions we have responded to during the project, providing a comprehensive overview of our analytical approach and key focus areas.
+
+### Dataset File:
+The dataset Excel file contains detailed information about the relevant datasets used in the project, including data sources, descriptions, and any preprocessing steps undertaken.
